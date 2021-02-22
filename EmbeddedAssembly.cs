@@ -8,6 +8,10 @@ using System.Security.Cryptography;
 namespace Addio
 {
 
+    /// <summary>
+    /// Credit goes to adriancs.
+    /// https://www.codeproject.com/Articles/528178/Load-DLL-From-Embedded-Resource
+    /// </summary>
     public class EmbeddedAssembly
     {
         // Version 1.3
@@ -84,6 +88,7 @@ namespace Addio
 
             asm = Assembly.LoadFile(tempFile);
 
+            if (!dic.ContainsKey(asm.FullName))
                 dic.Add(asm.FullName, asm);
         }
 

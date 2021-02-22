@@ -70,8 +70,9 @@ You can change how the program runs by editing it in a text editor.
 - Real Chance (0 - 1) - The chance a real connection will be displayed. (0 - 1)
 - Custom Chance (0 - 1) - The chance a custom connection will be displayed. (0 - 1)
 - Allow Repeated Connections- Can custom, and real commands be displayed more than once? If your list is short this is not recommended.
-- Custom Connections - An array of pre-built connections, allows you to customize the protocol, local IP, foreign IP, and the state.
-- Custom Connection Formats - An array of semi-built connections, just like Custom Connections but allows you to randomize things like digits. 
+- Randomize Custom Order - If true the custom commands will be displayed in a random order.
+- Custom Connections - An array of pre-built connections, allows you to customize the protocol, local IP, foreign IP, and the state. These can be toggled to repeat or not.
+- Custom Connection Formats - An array of semi-built connections, just like Custom Connections but allows you to randomize things like digits. These will always have a chance of repeating.
 
 Custom Connection Formats Example:
 ```
@@ -84,6 +85,8 @@ Custom Connection Formats Example:
 
 -protocol  = enum Proto { TCP = 0, UDP = 1, TCPv6 = 2, UDPv6 = 3, RANDOM = 4 }
 -State     = public enum State { ESTABLISHED = 0, TIME_WAIT = 1, LAST_ACK = 2, CLOSE_WAIT = 3, RANDOM = 4 }
+
+ Format Token
 -{LOCAL}   - Will be replaced with the local IP.
 -{D255}    - Will be replaced with a digit from 0 to 255
 -{PORT}    - Will be replaced with a random port.
@@ -113,7 +116,15 @@ One thing that could be done is dealing with more netstat arguments. Here is a l
 -y : Partial implementation, only displays constant string.
 
 ```
-Other than that, there isn't really much to be done, other than adding silly features that could create a laugh.
+
+Another thing that could be done is adding more tokens/wildcards for the custom connections in the config file. The way its implemented right now is bad, to add more tokens easily the section of code will have to be refactored.
+
+Other than that, there isn't really much to be done, other than adding silly features that could create a laugh or two.
 
 ## License
 No license, you are free to do what ever you want. But if you want to give me credit, you are welcome to do so.
+
+## Credit
+
+- Author   : Addio from Addio Electronics
+- Website  : www.Addio.io

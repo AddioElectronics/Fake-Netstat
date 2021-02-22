@@ -64,6 +64,11 @@ namespace Addio.Antiscam.Fake.Netstat
         static bool[] usedRealConnections, usedCustomConnections;
 
         /// <summary>
+        /// If order is not random, it will use the custom command at this index.
+        /// </summary>
+        static int customConnectionIndex = 0;
+
+        /// <summary>
         /// An array of all the custom and real process names. For when using the -b argument
         /// </summary>
         static string[] processNames;
@@ -174,8 +179,14 @@ namespace Addio.Antiscam.Fake.Netstat
                     if (config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false) && random.NextDouble() < 0.5f)
                     {
                         //Pick a random custom command.
-                        int index = config.allowRepeatedConnections ? random.Next(0, config.custom_connections.Length - 1) : Array.IndexOf(usedCustomConnections, false);
+                        int index = config.allowRepeatedConnections ? 
+                            config.randomize_custom_order ? customConnectionIndex++ : 
+                            random.Next(0, config.custom_connections.Length - 1) : 
+                            Array.IndexOf(usedCustomConnections, false);
                         usedCustomConnections[index] = true;
+
+                        //Reset index if out of range, only used when config.randomize_custom_order is false
+                        if (customConnectionIndex >= config.custom_connections.Length) customConnectionIndex = 0;
 
                         Connection connection = config.custom_connections[index];
 
@@ -431,12 +442,14 @@ namespace Addio.Antiscam.Fake.Netstat
                     config.loopBackConectionCount = 2;
                     config.interval_min = 1000;
                     config.interval_max = 10000;
+                    config.custom_chance = 0.7f;
                     break;
                 case Profile.SlowShort:
-                    config.connectionCount = 3;
+                    config.connectionCount = 2;
                     config.loopBackConectionCount = 2;
                     config.interval_min = 500;
                     config.interval_max = 1000;
+                    config.custom_chance = 1;
                     break;
                 case Profile.SlowLong:
                     config.connectionCount = 100;
@@ -651,7 +664,7 @@ namespace Addio.Antiscam.Fake.Netstat
         /// </summary>
         /// <param name="args"></param>
         /// <param name="intervalString"></param>
-        /// <returns></returns>
+        /// <returns>True if it is the argument for setting the interval, and false if its a value for another argument.</returns>
         static bool ConfirmIntervalArg(string intervalString)
         {
             int index = Array.IndexOf(args, intervalString);
@@ -695,7 +708,8 @@ namespace Addio.Antiscam.Fake.Netstat
 
                         config.profile = (Profile)newProfile;
                         SaveConfig();
-                        Initialize();
+                        LoadConfig();
+                        ApplyProfile();
                     }
                 }
             }

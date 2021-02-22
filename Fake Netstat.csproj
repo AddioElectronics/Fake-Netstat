@@ -149,17 +149,19 @@
   <ItemGroup>
     <EmbeddedResource Include="EmbeddedAssemblys\Microsoft.Bcl.AsyncInterfaces.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Buffers.dll" />
-    <EmbeddedResource Include="EmbeddedAssemblys\System.Data.DataSetExtensions.dll" />
-    <EmbeddedResource Include="EmbeddedAssemblys\System.Data.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Memory.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Net.Http.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Numerics.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Numerics.Vectors.dll" />
-    <EmbeddedResource Include="EmbeddedAssemblys\System.Runtime.CompilerServices.Unsafe.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Text.Encodings.Web.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Text.Json.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Threading.Tasks.Extensions.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.ValueTuple.dll" />
+  </ItemGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="EmbeddedAssemblys\System.Data.DataSetExtensions.dll" />
+    <EmbeddedResource Include="EmbeddedAssemblys\System.Data.dll" />
+    <EmbeddedResource Include="EmbeddedAssemblys\System.Runtime.CompilerServices.Unsafe.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Xml.dll" />
     <EmbeddedResource Include="EmbeddedAssemblys\System.Xml.Linq.dll" />
   </ItemGroup>

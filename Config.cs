@@ -88,12 +88,20 @@ namespace Addio.Antiscam.Fake.Netstat
         public bool allowRepeatedConnections;
 
         /// <summary>
+        /// Should the custom connections be displayed in a random order?
+        /// </summary>
+        [JsonInclude]
+        public bool randomize_custom_order = false;
+
+        /// <summary>
         /// Custom connections to display in the list.
         /// Will only be displayed once if <see cref="allowRepeatedConnections"/> is false.
         /// Can only randomize the protocol, state, and port.
         /// </summary>
         [JsonInclude]
-        public Connection[] custom_connections = new Connection[] { new Connection { exeName = "grandson-web-tracker.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "jagex:https", state = Program.State.ESTABLISHED, pid = -1 },
+        public Connection[] custom_connections = new Connection[] { new Connection { exeName = "teamviewer.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "microsoft:https", state = Program.State.ESTABLISHED, pid = -1 },
+                                                                    new Connection { exeName = "windows-defender.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "microsoft:https", state = Program.State.ESTABLISHED, pid = -1 },
+                                                                    new Connection { exeName = "grandson-web-tracker.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "jagex:https", state = Program.State.ESTABLISHED, pid = -1 },
                                                                     new Connection { exeName = "NotaBackdoor.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "anonymous:onion", state = Program.State.ESTABLISHED, pid = 69420  },
                                                                     new Connection { exeName = "grandson-web-tracker.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "porn-hub:https", state = Program.State.ESTABLISHED , pid = -1 },
                                                                     new Connection { exeName = "grandson-web-tracker.exe", protocol = Proto.TCP, local_address = Strings.CustomFormatID.localIP, foreign_address = "only-fans:https", state = Program.State.ESTABLISHED, pid = -1  },
