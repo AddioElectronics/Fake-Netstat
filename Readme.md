@@ -7,7 +7,7 @@ Inspired by Kitboga, who said in one of his recent videos that he is using a fak
 
 ## Installation
 
-Note: This should only be used on a virtual machine.
+Note: You should only be replacing the executables on a Virtual Machine. Try it out in visual studio first.
 
 Backup and replace the NETSTAT.exe in these locations, with the NETSTAT.exe from bin\Release.
 ```
