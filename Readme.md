@@ -1,6 +1,6 @@
 # Fake Netstat
 
-Fake Netstat is scam baiting software, for tricking tech support scammers.
+Fake Netstat is a replacement executable, for tricking tech support scammers.
 You can make the list very short, and very slow, or the opposite being extremely fast and infinitely long.
 
 Inspired by Kitboga, who said in one of his recent videos that he is using a fake netstat, and so I thought it would be a fun little excercise to do this afternoon.
@@ -9,7 +9,8 @@ Inspired by Kitboga, who said in one of his recent videos that he is using a fak
 
 Note: This should only be used on a virtual machine.
 
-Backup and replace the NETSTAT.exe in these locations.
+Backup and replace the NETSTAT.exe in these locations, with the NETSTAT.exe from bin\Release.
+```
 
 - C:\Windows\SysWOW64
 
@@ -18,10 +19,12 @@ Backup and replace the NETSTAT.exe in these locations.
 - C:\Windows\WinSxS\amd64_microsoft-windows-tcpip-utility_31bf3856ad364e35_10.0.18362.1_none_052463a5cc169193
 
 - C:\Windows\WinSxS\wow64_microsoft-windows-tcpip-utility_31bf3856ad364e35_10.0.18362.1_none_0f790df80077538e
+```
 
-You will have to figure out on your own how to overwrite these files, as there is more to it than just getting a security prompt.
+You will have to figure out on your own how to rename/overwrite these files, as there is more to it than just getting a security prompt. Windows has extra security for these applications, and even after the elevated prompt, it will still stop you.
 
-If you want to test it out, just rename the fake netstat executable and run it from the command line.
+If you want to test it out, just rename the fake netstat executable and run it from the command line, or just run from inside visual studio.
+
 
 ## Usage
 
@@ -34,7 +37,7 @@ I've added 2 custom commands,
 - /config - Will open the configuration folder for easy access to the config file.
 - /profile # - Will set the profile in the config.
 
-## Configuring
+#### Configuring
 
 After the first time running, it will create a config file at %Temp%\Addio\Antiscam\Netstat\config.json
 
@@ -87,13 +90,30 @@ Custom Connection Formats Example:
 
 ```
 
+- Fake Processes - An array of strings for when -b is passed as an argument. If there is none in the list, names of real processes will be used.
+- Use Real Process Names - When -b is passed as an argument, should real process names be displayed? If no fake processes were created, this will always be true.
+
 ## Contributing
-I encourage you to pull and make changes, I will not be working on this more than this one afternoon, but I will still manage and merge changes I approve.
+I encourage anyone to pull and make changes, I will not be working on this more than this one afternoon(Other than packing DLLs into build), but I will still manage and merge changes I approve.
 
-One thing that needs to be done is taking the real netstat arguments into account, they are being parsed, but nothing is happening with the data.
+One thing that could be done is dealing with more netstat arguments. Here is a list of arguments and their status. Not very important, these technicians aren't very good with PC's, and there is almost 0 chances they will ever pass an argument.
+```
+-a : Not Implemented, would take a lot of work.
+-b : Fully faked!
+-e : Partial implementation, only displays constant string. Would be easy to make dynamic.
+-f : Not Implemented
+-n : Implemented
+-o : Partial implementation, only displays constant string.
+-p : Implemented
+-q : Not Implemented
+-r : Partial implementation, only displays constant string.
+-s : Not Implemented
+-t : Partial implementation, only displays constant string.
+-x : Not Implemented
+-y : Partial implementation, only displays constant string.
 
-Also the help text is displayed, but only when you type help, /? or ?, the regular netstat will display it when ever an invalid argument is passed, so that is also something that should be changed.
-
+```
+Other than that, there isn't really much to be done, other than adding silly features that could create a laugh.
 
 ## License
-No license, you are free to do what ever you want.
+No license, you are free to do what ever you want. But if you want to give me credit, you are welcome to do so.

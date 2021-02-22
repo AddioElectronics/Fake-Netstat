@@ -9,6 +9,8 @@ using System.Text.RegularExpressions;
 using System.Net.NetworkInformation;
 using System.Text.Json.Serialization;
 using System.Diagnostics;
+using System.Reflection;
+using System.Collections.Generic;
 
 namespace Addio.Antiscam.Fake.Netstat
 {
@@ -39,11 +41,11 @@ namespace Addio.Antiscam.Fake.Netstat
         /// </summary>
         public static Config config;
 
+
         /// <summary>
-        /// The netstat arguments that can be set via the command line.
-        /// Note: At the moment the only one thats implemented is interval. Feel free to add functionality, I'm done with this project.
+        /// The arguments passed via the command line.
         /// </summary>
-        static Args arguments = new Args();
+        static string[] args;
 
         /// <summary>
         /// The random number generator.
@@ -61,6 +63,20 @@ namespace Addio.Antiscam.Fake.Netstat
         /// </summary>
         static bool[] usedRealConnections, usedCustomConnections;
 
+        /// <summary>
+        /// An array of all the custom and real process names. For when using the -b argument
+        /// </summary>
+        static string[] processNames;
+
+        /// <summary>
+        /// The format template for adding a connection.
+        /// </summary>
+        public static string connectionFormat = Strings.console_format;
+
+        /// <summary>
+        /// The index of the additional formatting to append to <see cref="Strings.console_format"/>
+        /// </summary>
+        static int extra_format_index = 4;
 
         /// <summary>
         /// Pre-generated local loopback connections.
@@ -121,40 +137,27 @@ namespace Addio.Antiscam.Fake.Netstat
 
         #endregion
 
+        #region Methods
 
         static void Main(string[] args)
         {
-            Console.WriteLine(); //New line, this one might not be needed. Can't tell while debugging.
+
+            Program.args = args;
 
             //Make all characters lower case to make parsing easier.
-            Array.ForEach(args, (x) => { x = x.ToLower(); });
-
-            //If the user typed passed a help argument display the help message, and do nothing else.
-            if(args.Any((x) => { return Strings.NetstatArgs.help.Contains(x); }))
-            {
-                Console.WriteLine(Strings.help);
-#if DEBUG
-                //Stop from closing immediately.
-                Console.ReadKey();
-#endif
-                return;
-            }
+            Array.ForEach(Program.args, (x) => { x = x.ToLower(); });
 
 
-            Initialize();
-            ParseNetstatArguments(args);
-            ParseCustomArguments(args);
+            //Initialize. If return true, execution has finished.
+            if (Initialize()) return;
 
 
-            //Display the "header"
-            Console.WriteLine(Strings.active_connections);
-            Console.WriteLine(); //New line
-            Console.WriteLine( String.Format(Strings.console_format, Strings.proto, Strings.local_address, Strings.foreign_address, Strings.state));
+            DisplayHeader();
 
             //First create the local loopback connections. These are instant
             for (int i = 0; i < config.loopBackConectionCount; i++)
             {
-                Console.WriteLine(loopbackConnections[i]);
+                ConsoleWriteConnection(loopbackConnections[i]);
                 Thread.Sleep(1);
             }
 
@@ -162,10 +165,11 @@ namespace Addio.Antiscam.Fake.Netstat
             for (int i = 0; i < config.connectionCount; i++)
             {
                 if(config.interval_max > 0)
-                Thread.Sleep(arguments.forceInterval > 0 ? arguments.forceInterval * 1000 : random.Next(config.interval_min, config.interval_max));
+                Thread.Sleep(Args.forceInterval > 0 ? Args.forceInterval * 1000 : random.Next(config.interval_min, config.interval_max));
 
                 //Should we use a custom connection or generate a random one?
-                if ((config.custom_connection_formats.Length > 0 || (config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false))) && random.NextDouble() < config.custom_chance)
+                //If Args.displayInNumericalForm is set, there is no reason to not just generate a fully random one.
+                if ((config.custom_connection_formats.Length > 0 || (config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false))) && random.NextDouble() < config.custom_chance && !Args.displayInNumericalForm)
                 {
                     if (config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false) && random.NextDouble() < 0.5f)
                     {
@@ -173,19 +177,26 @@ namespace Addio.Antiscam.Fake.Netstat
                         int index = config.allowRepeatedConnections ? random.Next(0, config.custom_connections.Length - 1) : Array.IndexOf(usedCustomConnections, false);
                         usedCustomConnections[index] = true;
 
-                        Connection con = config.custom_connections[index];
+                        Connection connection = config.custom_connections[index];
 
-                        if (con.protocol == Proto.RANDOM)
-                            con.protocol = RandomProtocol();
+                        //Exe name
+                        if (Args.displayExecutableInvolved)
+                            connection.exeName = GetRandomProcessName();
 
-                        if (con.state == State.RANDOM)
-                            con.state = RandomState();
+                        if (connection.protocol == Proto.RANDOM)
+                            connection.protocol = RandomProtocol();
 
-                        if (con.local_address.Contains(Strings.CustomFormatID.localIP))
-                            con.local_address = con.local_address.Replace(Strings.CustomFormatID.localIP, LocalIPAddress + ":" + RandomPort(true));
+                        if (connection.state == State.RANDOM)
+                            connection.state = RandomState();
+
+                        if (connection.local_address.Contains(Strings.CustomFormatID.localIP))
+                            connection.local_address = connection.local_address.Replace(Strings.CustomFormatID.localIP, LocalIPAddress + ":" + RandomPort(true));
+
+                        if (connection.pid <= 0)
+                            connection.pid = RandomPid();
 
                         //Display it!
-                        Console.WriteLine(con);
+                        ConsoleWriteConnection(connection);
                     }
                     else
                     {
@@ -194,20 +205,20 @@ namespace Addio.Antiscam.Fake.Netstat
 
                         //Display it! If its null, then a parsing error happened and will be skipped.
                         if (con != null)
-                            Console.WriteLine(con);
+                            ConsoleWriteConnection(con.GetValueOrDefault());
                     }
                 }
                 else
                 {
                     //Should we add a real connection? This is an easy way to help make it look more believable, without a bunch of extra work.
-                    if (config.useRealConnections && config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false) && random.NextDouble() < config.real_chance)
+                    if (config.useRealConnections && config.custom_connections.Length > 0 && usedCustomConnections.Any(x => x == false) && random.NextDouble() < config.real_chance && !Args.displayInNumericalForm)
                     {
-                        Console.WriteLine(GetRealConnection());
+                        ConsoleWriteConnection(GetRealConnection());
                     }
                     else
                     {
                         //Generate fake connection
-                        Console.WriteLine(new Connection(false).ToString());
+                        ConsoleWriteConnection(new Connection(false));
                     }
                 }
 
@@ -221,6 +232,66 @@ namespace Addio.Antiscam.Fake.Netstat
 
         }
 
+        /// <summary>
+        /// Writes the connection to the console, if it meets the arguments requirements.
+        /// </summary>
+        static void ConsoleWriteConnection(Connection connection)
+        {
+            //If the connection does not match the protocol set by an argument, do not display it.
+            if (Args.displayProtocolsOnly != connection.protocol && Args.displayProtocolsOnly != Proto.RANDOM) return;          
+
+            //Display the connection
+            Console.WriteLine(connection);
+
+            //Display a random process name below the connection
+            if (Args.displayExecutableInvolved)
+                Console.WriteLine("[" + (connection.exeName == null || connection.exeName.Length == 0 ? GetRandomProcessName() : connection.exeName) + "]");
+        }
+
+
+        /// <summary>
+        /// Displays the column names.
+        /// </summary>
+        /// <returns></returns>
+        static void DisplayHeader()
+        {
+
+            //Display the "header"
+            Console.WriteLine(); //New line, this one might not be needed. Can't tell while debugging.
+            Console.WriteLine(Strings.active_connections);
+            Console.WriteLine(); //New line
+
+            List<string> headerValues = new List<string> { Strings.proto, Strings.local_address, Strings.foreign_address, Strings.state };
+
+            Action<int> increaseFormat = (size) =>
+            {
+                connectionFormat += Strings.extra_format.Replace("i", (extra_format_index++).ToString()).Replace("l", size.ToString());
+            };
+
+            if (Args.displayTcpConnectionTemplateForAll)
+            {
+                increaseFormat(15);
+                headerValues.Add(Strings.template);
+            }
+            else 
+            {
+
+                if (Args.displayOwningProcessId)
+                {
+                    increaseFormat(8);
+                    headerValues.Add(Strings.pid);
+                }
+
+                if (Args.displayCurrentConnectionOffloadState)
+                {
+                    increaseFormat(8);
+                    headerValues.Add(Strings.offloadState);
+                }
+            }
+
+            Console.WriteLine(String.Format(connectionFormat, headerValues.ToArray()));
+        }
+
 
         #region Initialization Methods
 
@@ -229,8 +300,10 @@ namespace Addio.Antiscam.Fake.Netstat
         /// And instantiates the random number generator.
         /// Also loads the real TCP connections.
         /// </summary>
-        static void Initialize()
+        /// <returns>True if execution has finished. False if execution should keep going.</returns>
+        static bool Initialize()
         {
+            LoadDlls();
             LoadConfig();
 
             ApplyProfile();
@@ -240,12 +313,76 @@ namespace Addio.Antiscam.Fake.Netstat
             else
                 random = new Random(config.seed);
 
+            //Parse the custom Args.
+            ParseCustomArguments();
+
+            //Parse the regular netstat Args.
+            //If an invalid argument is passed,
+            //display the help text and stop execution
+            if (!ParseNetstatArguments())
+            {
+                Console.WriteLine(); //New line, this one might not be needed. Can't tell while debugging.
+                Console.WriteLine(Strings.help);
+#if DEBUG
+                //Stop from closing immediately.
+                Console.ReadKey();
+#endif
+                return true;
+            }
+
+
+            //If any netstat arguments were passed that display information other than connections, do that here.
+            //Some commands will stop connections from displaying, so if its true, it means to stop execution.
+            if (ExecuteNetstatArguments())
+            {
+#if DEBUG
+                //Stop from closing immediately.
+                Console.ReadKey();
+#endif
+                return true;
+            }
+
             if (config.useRealConnections)
                 GetRealTcpConnections();
 
             if (config.loopBackConectionCount > 0)
                 PregenerateLoopbackAddresses();
+
+
+            //Execution should keep going.
+            return false;
         }
+
+        /// <summary>
+        /// Loads the embedded DLLs into the assembly.
+        /// </summary>
+        static void LoadDlls()
+        {
+            AppDomain.CurrentDomain.AssemblyResolve += new ResolveEventHandler(CurrentDomain_AssemblyResolve);
+
+            var assembly = Assembly.GetExecutingAssembly();
+
+            foreach(var resource in assembly.GetManifestResourceNames())
+            {
+                if (!resource.ToLower().EndsWith(".dll")) continue;
+                string dllname = resource.Replace(typeof(Program).Namespace + '.', "");
+                EmbeddedAssembly.Load(resource, dllname);
+            }
+
+        }
+
+        /// <summary>
+        /// Event for when the current domain fails to find an assembly.
+        /// This will get the previously loaded assembly.
+        /// </summary>
+        /// <returns>The embedded assembly</returns>
+        static System.Reflection.Assembly CurrentDomain_AssemblyResolve(object sender, ResolveEventArgs args)
+        {
+            return EmbeddedAssembly.Get(args.Name);
+        }
+
+
+
 
         /// <summary>
         /// Loads the configuration file if it exists, and creates it if it doesnt.
@@ -406,17 +543,69 @@ namespace Addio.Antiscam.Fake.Netstat
 
         #region Argument Parsing Methods
 
+
+        /// <summary>
+        /// If the user has passed any invalid arguments, the real netstat will always display the help text.
+        /// This checks to see if all arguments are valid.
+        /// </summary>
+        /// <param name="stringFields">The fields from <see cref="Strings.NetstatArgs"/></param>
+        /// <param name="customFields">The fields from <see cref="Strings.CustomArgs"/></param>
+        /// <returns>If the user has passed any invalid Args.</returns>
+        static bool ContainsInvalidArguments(FieldInfo[] stringFields, FieldInfo[] customFields)
+        {
+            //Create an array combining the netstat and our custom Args.
+            string[] allArguments = new string[stringFields.Length + customFields.Length];
+
+            //The possible values passed with an argument.
+            //As of now this enum is the only value passed, that is not a number.
+            //Unless a custom command is created, it will stay that way.
+            string[] possibleValues = Enum.GetNames(typeof(Proto));
+
+            //The netstat arguments
+            for (int i = 0; i < stringFields.Length; i++)
+            {
+                //if (stringFields[i] == null) continue;
+                allArguments[i] = stringFields[i].GetValue(null) as string;
+            }
+
+            //The custom arguments
+            for (int i = 0; i < customFields.Length; i++)
+            {
+                //if (customFields[i] == null) continue;
+                allArguments[i + stringFields.Length] = customFields[i].GetValue(null) as string;
+            }
+
+            
+
+            //Checking the arguments
+            foreach(string arg in args)
+            {
+                //if (arg == null) continue;
+                //If the argument is not contained in our list, it is an invalid argument.
+                //Unless the user has passed an integer, or the protocol.
+                if (!allArguments.Contains(arg) && !possibleValues.Contains(arg) && !int.TryParse(arg, out int _)) return true;
+            }
+
+
+            //No invalid arguments
+            return false;
+        }
+
         /// <summary>
         /// (Untested)
         /// Parses the arguemtns passed using Reflection.
         /// </summary>
-        /// <param name="args"></param>
-        static void ParseNetstatArguments(string[] args)
+        static bool ParseNetstatArguments()
         {
             //Instead of manually setting each argument, we will use reflection to set them.
 
             var stringFields = typeof(Strings.NetstatArgs).GetFields();
-            var boolFields = arguments.GetType().GetFields();
+            var customFields = typeof(Strings.CustomArgs).GetFields();
+            var boolFields = typeof(Args).GetFields();
+
+            //If it contains invalid arguments, return false which means to show the help text.
+            if (ContainsInvalidArguments(stringFields, customFields)) return false;          
+
 
             for (int i = 0; i < stringFields.Length; i++)
             {
@@ -429,11 +618,11 @@ namespace Addio.Antiscam.Fake.Netstat
                         //This argument is the only one that can be passed a value, so we need to deal with this differently.
                         int index = Array.IndexOf(args, Strings.NetstatArgs.displayProtocolsOnly) + 1;
                         if (args.Length <= index) continue; //Out of range, skip it.
-                        Enum.TryParse(args[index], out arguments.displayProtocolsOnly);
+                        Enum.TryParse(args[index], true, out Args.displayProtocolsOnly);
                     }
                     else
                     {
-                        boolFields[i].SetValue(arguments, true);
+                        boolFields[i].SetValue(null, true);
                     }
                 }
             }
@@ -443,12 +632,15 @@ namespace Addio.Antiscam.Fake.Netstat
             {
                 string intervalString = args.First(x => Regex.IsMatch(x, @"^\d+$"));
 
-                if (intervalString != null && intervalString != "" && ConfirmIntervalArg(args, intervalString))
+                if (intervalString != null && intervalString != "" && ConfirmIntervalArg(intervalString))
                 {
-                    arguments.forceInterval = int.Parse(intervalString);
+                    Args.forceInterval = int.Parse(intervalString);
                 }
             }
             catch { }
+
+            //No invalid arguments
+            return true;
 
         }
 
@@ -460,7 +652,7 @@ namespace Addio.Antiscam.Fake.Netstat
         /// <param name="args"></param>
         /// <param name="intervalString"></param>
         /// <returns></returns>
-        static bool ConfirmIntervalArg(string[] args, string intervalString)
+        static bool ConfirmIntervalArg(string intervalString)
         {
             int index = Array.IndexOf(args, intervalString);
 
@@ -472,7 +664,7 @@ namespace Addio.Antiscam.Fake.Netstat
         /// <summary>
         /// Parses custom arguments users can use to quickly change the config, without going to the file.
         /// </summary>
-        static void ParseCustomArguments(string[] args)
+        static void ParseCustomArguments()
         {
             //Open config folder
             if (args.Contains(Strings.CustomArgs.config))
@@ -508,6 +700,33 @@ namespace Addio.Antiscam.Fake.Netstat
                 }
             }
         }
+
+
+        /// <summary>
+        /// If the user has passed netstat arguments that show other information it will be displayed here.
+        /// </summary>
+        /// <returns>True if the program has finished, and false if the connections should still be shown.</returns>
+        static bool ExecuteNetstatArguments()
+        {
+            if (Args.displayEthernetStatistics)
+            {
+                Console.WriteLine(Strings.ethernet_stats);
+                return true;
+            }
+
+            if (Args.displayExecutableInvolved)
+                GetProcessNames();
+
+            if (Args.displayTheRoutingTable)
+            {
+                Console.WriteLine(Strings.routingTable);
+                return true;
+            }
+
+            //Continue execution and display connections.
+            return false;
+        }
+
         #endregion
 
 
@@ -554,6 +773,43 @@ namespace Addio.Antiscam.Fake.Netstat
             return String.Format(String.Format(Strings.ip_format, random.Next(1, 255), random.Next(0, 255), random.Next(0, 255), random.Next(0, 255), RandomPort(false)));
         }
 
+
+        /// <summary>
+        /// Generates the list of process names for when the -b command is passed.
+        /// </summary>
+        public static void GetProcessNames()
+        {
+
+            if (config.useRealProcessNames || config.fakeProcesses.Length == 0)
+            {                
+                Process[] processlist = Process.GetProcesses();
+                processNames = new string[processlist.Length + config.fakeProcesses.Length];
+
+                for(int i = 0; i < processlist.Length; i++)
+                {
+                    processNames[i] = processlist[i].ProcessName;
+                }
+                if (config.fakeProcesses.Length > 0)
+                    Array.Copy(config.fakeProcesses, 0, processNames, processlist.Length, config.fakeProcesses.Length);
+
+                return;
+            }
+            else
+            {
+                processNames = config.fakeProcesses;
+            }
+
+        }
+
+        /// <summary>
+        /// Gets a random process name to display for the -b command.
+        /// </summary>
+        /// <returns></returns>
+        public static string GetRandomProcessName()
+        {
+            return "  " + processNames[random.Next(0, processNames.Length - 1)] + ".exe";
+        }
+
         /// <summary>
         /// Creates a random connection using a custom format.
         /// </summary>
@@ -564,28 +820,30 @@ namespace Addio.Antiscam.Fake.Netstat
             int index = random.Next(0, config.custom_connection_formats.Length - 1);
             Connection connection = new Connection(config.custom_connection_formats[index]);
 
+            //Exe name
+            if (Args.displayExecutableInvolved)
+                connection.exeName = GetRandomProcessName();
+
             //Protocol
             if (connection.protocol == Proto.RANDOM)
                 connection.protocol = RandomProtocol();
 
             //Local IP
-            {
-                if (connection.local_address.Contains(Strings.CustomFormatID.localIP))
-                    connection.local_address = connection.local_address.Replace(Strings.CustomFormatID.localIP, LocalIPAddress + ":" + RandomPort(true));
-            }
+            if (connection.local_address.Contains(Strings.CustomFormatID.localIP))
+                connection.local_address = connection.local_address.Replace(Strings.CustomFormatID.localIP, LocalIPAddress + ":" + RandomPort(true));
 
             //Foreign Address
             {
                 //Port
                 if (connection.foreign_address.Contains(Strings.CustomFormatID.port))
-                {                  
+                {
                     connection.foreign_address = connection.foreign_address.Replace(Strings.CustomFormatID.port, RandomPort(false));
                 }
 
-                //Replace numbers
+                //Replace numbers, this should be put into a new function when more than just digits are used. A function that parses all CustomFormatIDs.
                 while (true)
                 {
-                    int start = connection.foreign_address.IndexOf("{D");
+                    int start = connection.foreign_address.IndexOf("{" + Strings.CustomFormatID.digit);
                     if (start == -1) break;
                     int end = connection.foreign_address.IndexOf("}", start);
                     int max;
@@ -593,16 +851,21 @@ namespace Addio.Antiscam.Fake.Netstat
                     if (!int.TryParse(dn, out max)) return null; //If a parsing error happens we will return null so the connection isn't displayed.
 
                     connection.foreign_address = connection.foreign_address.Remove(start, end - start + 1);
-                    connection.foreign_address = connection.foreign_address.Insert(start, random.Next(0, max).ToString());                    
+                    connection.foreign_address = connection.foreign_address.Insert(start, random.Next(0, max).ToString());
                 }
             }
 
             //State
-                if(connection.state == State.RANDOM)
-                    connection.state = RandomState();
+            if (connection.state == State.RANDOM)
+                connection.state = RandomState();
+
+            //Pid
+            if (connection.pid <= 0)
+                connection.pid = RandomPid();
 
             return connection;
         }
+
 
 
         /// <summary>
@@ -612,7 +875,7 @@ namespace Addio.Antiscam.Fake.Netstat
         /// <returns></returns>
         public static string RandomPort(bool numberOnly)
         {
-            if (numberOnly) return random.Next(config.port_min, config.port_max).ToString();
+            if (numberOnly || Args.displayInNumericalForm) return random.Next(config.port_min, config.port_max).ToString();
 
             string port;
             int portChance = random.Next();
@@ -627,6 +890,15 @@ namespace Addio.Antiscam.Fake.Netstat
                 port = random.Next(config.port_min, config.port_max).ToString();
 
             return port;
+        }
+
+        /// <summary>
+        /// Creates a random process ID.
+        /// </summary>
+        /// <returns>PID string</returns>
+        public static int RandomPid()
+        {
+            return random.Next(0, 40000);
         }
 
         /// <summary>
@@ -651,12 +923,16 @@ namespace Addio.Antiscam.Fake.Netstat
         #endregion
 
 
+        #endregion
 
         [Serializable]
         public struct Connection
         {
             [JsonInclude]
-            public Program.Proto protocol;
+            public string exeName;
+
+            [JsonInclude]
+            public Proto protocol;
 
             [JsonInclude]
             public string local_address;
@@ -665,7 +941,13 @@ namespace Addio.Antiscam.Fake.Netstat
             public string foreign_address;
 
             [JsonInclude]
-            public Program.State state;
+            public State state;
+
+            [JsonInclude]
+            public int pid;
+
+            [JsonIgnore]
+            public bool loopback;
 
 
             /// <summary>
@@ -674,11 +956,20 @@ namespace Addio.Antiscam.Fake.Netstat
             /// <param name="localLoopback">Should the connection be a local loop back? (127.0.0.1)</param>
             public Connection (bool localLoopback)
             {
+                exeName = null;
+
+                loopback = localLoopback;
+
                 //I usually only see TCP, so thats all that will return.
                 protocol = Proto.TCP;
 
                 local_address = CreateRandomLocalAddress(localLoopback);
-                foreign_address = localLoopback ? Environment.MachineName + ":" + RandomPort(true) : CreateRandomForeignIPAddress();
+
+                foreign_address = localLoopback ? (Args.displayInNumericalForm ? 
+                    String.Format(Strings.local_loopback_ip, RandomPort(true)) :
+                    Environment.MachineName + 
+                    ":" + RandomPort(true)) : 
+                    CreateRandomForeignIPAddress();
 
                 int stateChance = random.Next();
 
@@ -690,6 +981,8 @@ namespace Addio.Antiscam.Fake.Netstat
                     state = State.TIME_WAIT;
                 else
                     state = State.LAST_ACK;
+
+                pid = RandomPid();
             }
 
             /// <summary>
@@ -697,41 +990,62 @@ namespace Addio.Antiscam.Fake.Netstat
             /// </summary>
             public Connection(Connection connection)
             {
+                exeName = connection.exeName;
+                loopback = connection.loopback;
                 protocol = connection.protocol;
                 local_address = connection.local_address;
                 foreign_address = connection.foreign_address;
                 state = connection.state;
+                pid = connection.pid;
             }
+
 
 
             public override string ToString()
             {
-                return String.Format(Strings.console_format, protocol.ToString(), local_address.ToString(), foreign_address.ToString(), state.ToString());
+                List<string> stringValues = new List<string> { protocol.ToString(), local_address.ToString(), foreign_address.ToString(), state.ToString() };
+
+                if (Args.displayTcpConnectionTemplateForAll)
+                    stringValues.Add(Strings.internet);
+                else
+                {
+                    if (Args.displayOwningProcessId)
+                        stringValues.Add(pid.ToString());
+
+                    if (Args.displayCurrentConnectionOffloadState)
+                        stringValues.Add(Strings.inhost);
+                }
+
+
+                return String.Format(Program.connectionFormat, stringValues.ToArray());
             }
         }       
+
+
+
 
         /// <summary>
         /// These are parameters that you can pass through netstat.
         /// Doubt a scammer would ever use a parameter, but in the small chance they do,
         /// this can make it look even more real.
-        /// Not everything is implemented, and I don't plan to, but thats why this is open source!
+        /// Not everything is implemented, and I don't plan to, but thats the great thing about open source!
         /// </summary>
-        public class Args
+        public static class Args
         {            
-            public bool displayAllConnectionsAndPorts = false; //-a            
-            public bool displayExecutableInvolved = false; //b            
-            public bool displayEthernetStatistics = false; //-e            
-            public bool displayFullyQualifiedDomainNames = false; //-f            
-            public bool displayInNumericalForm = false; //-n            
-            public bool displayOwningProcessId = false; //-o            
-            public Proto displayProtocolsOnly = Proto.TCP; //-p proto            
-            public bool displayAllConnectionsAndBoundNonListening = false; //-q            
-            public bool displayTheRoutingTable = false; //-r            
-            public bool displayPerProtocolStatistics = false; //-s            
-            public bool displayCurrentConnectionOffloadState = false; //-t            
-            public bool displayNetworkDirectConnections = false; //-x            
-            public bool displayTcpConnectionTemplateForAll = false; //-y            
-            public int forceInterval = -1; //interval
+            public static bool displayAllConnectionsAndPorts = false; //-a            
+            public static bool displayExecutableInvolved = false; //b            
+            public static bool displayEthernetStatistics = false; //-e            
+            public static bool displayFullyQualifiedDomainNames = false; //-f            
+            public static bool displayInNumericalForm = false; //-n            
+            public static bool displayOwningProcessId = false; //-o            
+            public static Proto displayProtocolsOnly = Proto.RANDOM; //-p proto            
+            public static bool displayAllConnectionsAndBoundNonListening = false; //-q            
+            public static bool displayTheRoutingTable = false; //-r            
+            public static bool displayPerProtocolStatistics = false; //-s            
+            public static bool displayCurrentConnectionOffloadState = false; //-t            
+            public static bool displayNetworkDirectConnections = false; //-x            
+            public static bool displayTcpConnectionTemplateForAll = false; //-y            
+            public static int forceInterval = -1; //interval
 
         }
 
@@ -745,8 +1059,13 @@ namespace Addio.Antiscam.Fake.Netstat
             /// <summary>
             /// The format of the commands in the console.
             /// </summary>
-            public const string console_format = "  {0,-7}  {1,-23}  {2,-23}  {3}";
+            public static string console_format = "  {0,-7}  {1,-23}  {2,-23}  {3,-15}";
 
+
+            /// <summary>
+            /// Additional formatting when using -t, -o, -y arguments.
+            /// </summary>
+            public const string extra_format = "  {i,-l}";
 
             /// <summary>
             /// All the possible arguments that can be sent to netstat.
@@ -766,9 +1085,6 @@ namespace Addio.Antiscam.Fake.Netstat
                 public static string displayCurrentConnectionOffloadState = "-t";
                 public static string displayNetworkDirectConnections = "-x";
                 public static string displayTcpConnectionTemplateForAll = "-y";
-
-
-                public static string[] help = new string[] { "help", "?", "/?" };
             }
 
             public static class CustomArgs
@@ -800,21 +1116,22 @@ namespace Addio.Antiscam.Fake.Netstat
                 public static string localIP = "{LOCAL}";
 
                 /// <summary>
+                /// If in a custom command it will be replaced with the local IP.
+                /// </summary>
+                public static string executable = "{EXE}";
+
+                /// <summary>
                 /// If in a custom command it will be replaced with a random state.
                 /// </summary>
                 public static string state = "{STATE}";
 
-                /// <summary>
-                /// If in a custom command it will be replaced with a random protocol.
-                /// </summary>
-                public static string proto = "{PROTO}";
 
                 /// <summary>
                 /// (Not used)
                 /// Used for inserting a number. x = the max. 
                 /// Example {N0} or {N5}
                 /// </summary>
-                public static string number = "{Nx}";
+                public static string number = "N";
 
                 /// <summary>
                 /// (Not used)
@@ -822,7 +1139,17 @@ namespace Addio.Antiscam.Fake.Netstat
                 /// Example {D2} = 14 (a 2 digit number)
                 /// (Not Implemented)
                 /// </summary>
-                public static string digits = "{Dx}";
+                public static string digit = "D";
+
+
+                /// <summary>
+                /// Returns the format ID wrapped inside {}
+                /// </summary>
+                /// <returns><paramref name="formatId"/> wrapped inside {}</returns>
+                public static string Wrapped(string formatId)
+                {
+                    return "{" + formatId + "}";
+                }
             }
 
             //public static Dictionary<string, string> argumentStrings = new Dictionary<string, string>()
@@ -843,12 +1170,18 @@ namespace Addio.Antiscam.Fake.Netstat
             //};
 
             public const string active_connections = "Active Connections";
+            public const string interface_statistics = "Interface Statistics";
 
             public const string tcp = "TCP";
             public const string proto = "Proto";
             public const string local_address = "Local Address";
             public const string foreign_address = "Foreign Address";
             public const string state = "State";
+            public const string pid = "PID";
+
+            public const string offloadState = "Offload State";
+
+            public const string template = "Template";
 
 
 
@@ -856,6 +1189,8 @@ namespace Addio.Antiscam.Fake.Netstat
             public const string time_wait = "TIME_WAIT";
             public const string last_ack = "LAST_ACK";
 
+            public const string inhost = "InHost";
+            public const string internet = "Internet";
 
             public const string ip_format = "{0}.{1}.{2}.{3}:{4}";
 
@@ -863,6 +1198,68 @@ namespace Addio.Antiscam.Fake.Netstat
             public const string https = "https";
 
             public const string local_loopback_ip = "127.0.0.1:{0}";
+
+            /// <summary>
+            /// Generate me!
+            /// </summary>
+            public const string ethernet_stats = @"Interface Statistics
+
+                           Received            Sent
+
+Bytes                      44587040         8404195
+Unicast packets               49305           35590
+Non-unicast packets            1665            2300
+Discards                          0               0
+Errors                            0               0
+Unknown protocols                 0";
+
+
+            /// <summary>
+            /// Generate me!
+            /// </summary>
+            public const string routingTable = @"===========================================================================
+Interface List
+ 10...a8 a1 59 25 5e d6 ......Intel(R) Ethernet Connection (11) I219-V
+ 18...98 af 65 4c 64 e5 ......Intel(R) Wi-Fi 5
+  5...98 af 65 4c 64 e6 ......Microsoft Wi-Fi Direct Virtual Adapter
+ 19...9a af 65 4c 64 e5 ......Microsoft Wi-Fi Direct Virtual Adapter #2
+  6...98 af 65 4c 64 e9 ......Bluetooth Device (Personal Area Network)
+  1...........................Software Loopback Interface 1
+===========================================================================
+
+IPv4 Route Table
+===========================================================================
+Active Routes:
+Network Destination        Netmask          Gateway       Interface  Metric
+          0.0.0.0          0.0.0.0      192.168.0.1     192.168.0.10     25
+        127.0.0.0        255.0.0.0         On-link         127.0.0.1    331
+        127.0.0.1  255.255.255.255         On-link         127.0.0.1    331
+  127.255.255.255  255.255.255.255         On-link         127.0.0.1    331
+      192.168.0.0    255.255.255.0         On-link      192.168.0.10    281
+     192.168.0.10  255.255.255.255         On-link      192.168.0.10    281
+    192.168.0.255  255.255.255.255         On-link      192.168.0.10    281
+        224.0.0.0        240.0.0.0         On-link         127.0.0.1    331
+        224.0.0.0        240.0.0.0         On-link      192.168.0.10    281
+  255.255.255.255  255.255.255.255         On-link         127.0.0.1    331
+  255.255.255.255  255.255.255.255         On-link      192.168.0.10    281
+===========================================================================
+Persistent Routes:
+  None
+
+IPv6 Route Table
+===========================================================================
+Active Routes:
+ If Metric Network Destination      Gateway
+  1    331 ::1/128                  On-link
+ 10    281 fe80::/64                On-link
+ 10    281 fe80::e9cf:e5c:1582:1d61/128
+                                    On-link
+  1    331 ff00::/8                 On-link
+ 10    281 ff00::/8                 On-link
+===========================================================================
+Persistent Routes:
+  None
+";
 
 
             public const string help = @"Displays protocol statistics and current TCP/IP network connections.
